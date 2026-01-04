@@ -2,24 +2,40 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import numpy as np
 import calendar
 import warnings
+import google.generativeai as genai  # Thư viện AI
 
 warnings.filterwarnings('ignore')
 
-# --- 1. CẤU HÌNH ---
-st.set_page_config(page_title="VNPOST COMMAND CENTER", layout="wide", initial_sidebar_state="collapsed")
+# --- 1. CẤU HÌNH API KEY (QUAN TRỌNG) ---
+# 👇👇👇 DÁN API KEY CỦA BẠN VÀO GIỮA DẤU NGOẶC KÉP DƯỚI ĐÂY 👇👇👇
+GOOGLE_API_KEY = "AIzaSyAp9j9b3RkswtQ_L4RuxdAIgg07yTgaSo8" 
+# 👆👆👆 VÍ DỤ: "AIzaSyD..."
+
+# Cấu hình AI
+if GOOGLE_API_KEY != "DÁN_KEY_CỦA_BẠN_VÀO_ĐÂY":
+    try:
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        ai_available = True
+    except:
+        ai_available = False
+else:
+    ai_available = False
+
+# --- CẤU HÌNH GIAO DIỆN ---
+st.set_page_config(page_title="VNPOST COMMAND CENTER (AI)", layout="wide", initial_sidebar_state="collapsed")
 
 # --- MÀU SẮC ---
 COLOR_BG = "#001f3f"
-COLOR_REV = "#EFB000"      # Vàng Honey
-COLOR_POS = "#28a745"      # Xanh lá
-COLOR_NEG = "#dc3545"      # Đỏ
-COLOR_WASTE = "#fd7e14"    # Cam
-COLOR_TOP_SALES = "#28a745" # Xanh Green
-COLOR_DEAD = "#6c757d"     # Xám
+COLOR_REV = "#EFB000"
+COLOR_POS = "#28a745"
+COLOR_NEG = "#dc3545"
+COLOR_WASTE = "#fd7e14"
+COLOR_TOP_SALES = "#28a745"
+COLOR_DEAD = "#6c757d"
 
 st.markdown(f"""
 <style>
@@ -30,10 +46,13 @@ st.markdown(f"""
     .stTabs [data-baseweb="tab-list"] {{ gap: 8px; }}
     .stTabs [data-baseweb="tab"] {{ height: 45px; background-color: #f1f1f1; border-radius: 5px; color: #333; font-weight: bold; }}
     .stTabs [aria-selected="true"] {{ background-color: {COLOR_BG}; color: {COLOR_REV}; }}
+    
+    /* Chatbot Style */
+    .stChatInput {{ position: fixed; bottom: 20px; z-index: 999; }}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🚀 VNPOST RETAIL COMMAND CENTER (V12.2)")
+st.title("🚀 VNPOST RETAIL COMMAND CENTER (V13.0 - AI POWERED)")
 
 # --- 2. HÀM XỬ LÝ ---
 @st.cache_data(show_spinner=False)
@@ -65,14 +84,14 @@ def clean_fig_no_yaxis(fig):
     fig.update_layout(showlegend=False, margin=dict(l=0,r=0,t=30,b=0))
     fig.update_xaxes(showgrid=False, showticklabels=True)
     fig.update_yaxes(showgrid=False, showticklabels=False, visible=False)
-    fig.update_layout(font=dict(size=14)) # Font to
+    fig.update_layout(font=dict(size=14))
     return fig
 
 def clean_fig_labels(fig):
     fig.update_layout(showlegend=False, margin=dict(l=0,r=0,t=30,b=0))
     fig.update_xaxes(showgrid=False, showticklabels=False)
     fig.update_yaxes(showgrid=False)
-    fig.update_layout(font=dict(size=14)) # Font to
+    fig.update_layout(font=dict(size=14))
     return fig
 
 # --- 3. UPLOAD ---
@@ -102,91 +121,89 @@ if f_prod and f_price and f_kpi and f_sales and f_inv and f_waste:
                 if any(k in c.lower() for k in keys): return i
             return 0
 
-        # Mapping (Ẩn trong sidebar)
-        with st.sidebar.expander("⚙️ Cấu Hình Cột", expanded=False):
-            st.markdown("**Sales**")
-            cols_s = df_sales_raw.columns.tolist()
-            s_ma = st.selectbox("Mã Hàng", cols_s, index=get_idx(cols_s, ['mã hàng']))
-            s_cn = st.selectbox("Chi Nhánh", cols_s, index=get_idx(cols_s, ['chi nhánh']))
-            s_time = st.selectbox("Ngày GD", cols_s, index=get_idx(cols_s, ['thời gian', 'ngày']))
-            s_sl = st.selectbox("SL Bán", cols_s, index=get_idx(cols_s, ['sl', 'số lượng']))
-            s_gb = st.selectbox("Giá Bán", cols_s, index=get_idx(cols_s, ['giá bán/sp', 'đơn giá bán']))
-            s_gv = st.selectbox("Giá Vốn", cols_s, index=get_idx(cols_s, ['giá vốn/sp', 'đơn giá vốn']))
+        # Mapping (Hidden)
+        cols_s = df_sales_raw.columns.tolist()
+        s_ma = cols_s[get_idx(cols_s, ['mã hàng'])]
+        s_cn = cols_s[get_idx(cols_s, ['chi nhánh'])]
+        s_time = cols_s[get_idx(cols_s, ['thời gian', 'ngày'])]
+        s_sl = cols_s[get_idx(cols_s, ['sl', 'số lượng'])]
+        s_gb = cols_s[get_idx(cols_s, ['giá bán/sp', 'đơn giá bán'])]
+        s_gv = cols_s[get_idx(cols_s, ['giá vốn/sp', 'đơn giá vốn'])]
+        
+        cols_i = df_inv_raw.columns.tolist()
+        i_ma = cols_i[get_idx(cols_i, ['mã hàng'])]
+        i_cn = cols_i[get_idx(cols_i, ['chi nhánh'])]
+        i_ton = cols_i[get_idx(cols_i, ['tồn cuối'])]
+        i_val = cols_i[get_idx(cols_i, ['giá trị cuối'])]
+        i_nhap = [c for c in cols_i if 'nhập' in c.lower() and 'giá trị' not in c.lower()]
+        
+        cols_w = df_waste_raw.columns.tolist()
+        w_ma = cols_w[get_idx(cols_w, ['mã hàng'])]
+        w_val = cols_w[get_idx(cols_w, ['giá trị', 'thành tiền'])]
+        w_time = cols_w[get_idx(cols_w, ['ngày', 'thời gian'])]
+        w_cn = cols_w[get_idx(cols_w, ['chi nhánh'])]
+        
+        cat_ma = df_prod.columns[get_idx(df_prod.columns, ['mã hàng'])]
+        cat_nhom = df_prod.columns[get_idx(df_prod.columns, ['nhóm hàng', 'ngành'])]
+        kpi_cn = df_kpi.columns[get_idx(df_kpi.columns, ['chi nhánh'])]
+        kpi_val = df_kpi.columns[get_idx(df_kpi.columns, ['chỉ tiêu', 'target'])]
+        kpi_kv = df_kpi.columns[get_idx(df_kpi.columns, ['khu vực', 'region'])]
+
+        with st.sidebar.expander("⚙️ Cấu Hình (Đã tự động chọn)", expanded=False):
+            st.write("Hệ thống tự động map cột. Kiểm tra nếu sai.")
+            s_ma = st.selectbox("Mã Hàng Sales", cols_s, index=cols_s.index(s_ma))
+
+        try:
+            df_prod[cat_ma] = df_prod[cat_ma].astype(str).str.strip().str.upper()
+            d_cat = dict(zip(df_prod[cat_ma], df_prod[cat_nhom].astype(str).str.split('>').str[0].str.strip()))
+            d_name = dict(zip(df_prod[cat_ma], df_prod[df_prod.columns[get_idx(df_prod.columns, ['tên'])]]))
             
-            st.markdown("**Stock**")
-            cols_i = df_inv_raw.columns.tolist()
-            i_ma = st.selectbox("Mã Kho", cols_i, index=get_idx(cols_i, ['mã hàng']))
-            i_cn = st.selectbox("CN Kho", cols_i, index=get_idx(cols_i, ['chi nhánh']))
-            i_ton = st.selectbox("SL Tồn", cols_i, index=get_idx(cols_i, ['tồn cuối']))
-            i_val = st.selectbox("GT Tồn", cols_i, index=get_idx(cols_i, ['giá trị cuối']))
-            i_nhap = st.multiselect("Cột Nhập", cols_i, default=[c for c in cols_i if 'nhập' in c.lower() and 'giá trị' not in c.lower()])
-            
-            st.markdown("**Waste**")
-            cols_w = df_waste_raw.columns.tolist()
-            w_ma = st.selectbox("Mã Hủy", cols_w, index=get_idx(cols_w, ['mã hàng']))
-            w_val = st.selectbox("GT Hủy", cols_w, index=get_idx(cols_w, ['giá trị', 'thành tiền']))
-            w_time = st.selectbox("Ngày Hủy", cols_w, index=get_idx(cols_w, ['ngày', 'thời gian']))
-            w_cn = st.selectbox("CN Hủy", cols_w, index=get_idx(cols_w, ['chi nhánh']))
-            
-            cat_ma = st.selectbox("Mã SP (Master)", df_prod.columns, index=get_idx(df_prod.columns, ['mã hàng']))
-            cat_nhom = st.selectbox("Ngành Hàng", df_prod.columns, index=get_idx(df_prod.columns, ['nhóm hàng', 'ngành']))
-            kpi_cn = st.selectbox("KPI CN", df_kpi.columns, index=get_idx(df_kpi.columns, ['chi nhánh']))
-            kpi_val = st.selectbox("KPI Target", df_kpi.columns, index=get_idx(df_kpi.columns, ['chỉ tiêu', 'target']))
-            kpi_kv = st.selectbox("KPI KV", df_kpi.columns, index=get_idx(df_kpi.columns, ['khu vực', 'region']))
+            df_kpi[kpi_cn] = df_kpi[kpi_cn].astype(str).str.strip()
+            d_reg = dict(zip(df_kpi[kpi_cn], df_kpi[kpi_kv]))
+            d_target = dict(zip(df_kpi[kpi_cn], safe_float(df_kpi[kpi_val])))
 
-        if st.sidebar.button("🚀 KÍCH HOẠT", use_container_width=True):
-            with st.spinner("Đang xử lý dữ liệu..."):
-                try:
-                    df_prod[cat_ma] = df_prod[cat_ma].astype(str).str.strip().str.upper()
-                    d_cat = dict(zip(df_prod[cat_ma], df_prod[cat_nhom].astype(str).str.split('>').str[0].str.strip()))
-                    d_name = dict(zip(df_prod[cat_ma], df_prod[df_prod.columns[get_idx(df_prod.columns, ['tên'])]]))
-                    
-                    df_kpi[kpi_cn] = df_kpi[kpi_cn].astype(str).str.strip()
-                    d_reg = dict(zip(df_kpi[kpi_cn], df_kpi[kpi_kv]))
-                    d_target = dict(zip(df_kpi[kpi_cn], safe_float(df_kpi[kpi_val])))
+            # Sales
+            df_m = pd.DataFrame()
+            df_m['PROD_ID'] = df_sales_raw[s_ma].astype(str).str.strip().str.upper()
+            df_m['BRANCH_ID'] = df_sales_raw[s_cn].astype(str).str.strip()
+            df_m['DATE'] = safe_date(df_sales_raw[s_time])
+            df_m = df_m.dropna(subset=['DATE'])
+            df_m['MONTH'] = df_m['DATE'].dt.strftime('%Y-%m')
+            df_m['QTY'] = safe_float(df_sales_raw[s_sl])
+            df_m['REV'] = df_m['QTY'] * safe_float(df_sales_raw[s_gb])
+            df_m['COST'] = df_m['QTY'] * safe_float(df_sales_raw[s_gv])
+            df_m['GP'] = df_m['REV'] - df_m['COST']
+            df_m['REGION'] = df_m['BRANCH_ID'].map(d_reg).fillna('Unknown')
+            df_m['CATEGORY'] = df_m['PROD_ID'].map(d_cat).fillna('Khác')
+            df_m['NAME'] = [d_name.get(x, x) for x in df_m['PROD_ID']]
 
-                    # Sales
-                    df_m = pd.DataFrame()
-                    df_m['PROD_ID'] = df_sales_raw[s_ma].astype(str).str.strip().str.upper()
-                    df_m['BRANCH_ID'] = df_sales_raw[s_cn].astype(str).str.strip()
-                    df_m['DATE'] = safe_date(df_sales_raw[s_time])
-                    df_m = df_m.dropna(subset=['DATE'])
-                    df_m['MONTH'] = df_m['DATE'].dt.strftime('%Y-%m')
-                    df_m['QTY'] = safe_float(df_sales_raw[s_sl])
-                    df_m['REV'] = df_m['QTY'] * safe_float(df_sales_raw[s_gb])
-                    df_m['COST'] = df_m['QTY'] * safe_float(df_sales_raw[s_gv])
-                    df_m['GP'] = df_m['REV'] - df_m['COST']
-                    df_m['REGION'] = df_m['BRANCH_ID'].map(d_reg).fillna('Unknown')
-                    df_m['CATEGORY'] = df_m['PROD_ID'].map(d_cat).fillna('Khác')
-                    df_m['NAME'] = [d_name.get(x, x) for x in df_m['PROD_ID']]
+            # Waste
+            df_w = pd.DataFrame()
+            df_w['PROD_ID'] = df_waste_raw[w_ma].astype(str).str.strip().str.upper()
+            df_w['BRANCH_ID'] = df_waste_raw[w_cn].astype(str).str.strip()
+            df_w['DATE'] = safe_date(df_waste_raw[w_time])
+            df_w = df_w.dropna(subset=['DATE'])
+            df_w['MONTH'] = df_w['DATE'].dt.strftime('%Y-%m')
+            df_w['VAL'] = safe_float(df_waste_raw[w_val])
+            df_w['REGION'] = df_w['BRANCH_ID'].map(d_reg).fillna('Unknown')
+            df_w['CATEGORY'] = df_w['PROD_ID'].map(d_cat).fillna('Khác')
 
-                    # Waste
-                    df_w = pd.DataFrame()
-                    df_w['PROD_ID'] = df_waste_raw[w_ma].astype(str).str.strip().str.upper()
-                    df_w['BRANCH_ID'] = df_waste_raw[w_cn].astype(str).str.strip()
-                    df_w['DATE'] = safe_date(df_waste_raw[w_time])
-                    df_w = df_w.dropna(subset=['DATE'])
-                    df_w['MONTH'] = df_w['DATE'].dt.strftime('%Y-%m')
-                    df_w['VAL'] = safe_float(df_waste_raw[w_val])
-                    df_w['REGION'] = df_w['BRANCH_ID'].map(d_reg).fillna('Unknown')
-                    df_w['CATEGORY'] = df_w['PROD_ID'].map(d_cat).fillna('Khác')
+            # Inv
+            df_i = pd.DataFrame()
+            df_i['PROD_ID'] = df_inv_raw[i_ma].astype(str).str.strip().str.upper()
+            df_i['BRANCH_ID'] = df_inv_raw[i_cn].astype(str).str.strip()
+            df_i['STOCK_QTY'] = safe_float(df_inv_raw[i_ton])
+            df_i['STOCK_VAL'] = safe_float(df_inv_raw[i_val])
+            df_i['IMPORT_QTY'] = 0
+            for c in i_nhap: df_i['IMPORT_QTY'] += safe_float(df_inv_raw[c])
+            df_i['REGION'] = df_i['BRANCH_ID'].map(d_reg).fillna('Unknown')
+            df_i['CATEGORY'] = df_i['PROD_ID'].map(d_cat).fillna('Khác')
+            df_i['NAME'] = [d_name.get(x, x) for x in df_i['PROD_ID']]
 
-                    # Inv
-                    df_i = pd.DataFrame()
-                    df_i['PROD_ID'] = df_inv_raw[i_ma].astype(str).str.strip().str.upper()
-                    df_i['BRANCH_ID'] = df_inv_raw[i_cn].astype(str).str.strip()
-                    df_i['STOCK_QTY'] = safe_float(df_inv_raw[i_ton])
-                    df_i['STOCK_VAL'] = safe_float(df_inv_raw[i_val])
-                    df_i['IMPORT_QTY'] = 0
-                    for c in i_nhap: df_i['IMPORT_QTY'] += safe_float(df_inv_raw[c])
-                    df_i['REGION'] = df_i['BRANCH_ID'].map(d_reg).fillna('Unknown')
-                    df_i['CATEGORY'] = df_i['PROD_ID'].map(d_cat).fillna('Khác')
-                    df_i['NAME'] = [d_name.get(x, x) for x in df_i['PROD_ID']]
-
-                    st.session_state.data = {'sales': df_m, 'waste': df_w, 'inv': df_i, 'target': d_target}
-                    st.session_state.processed = True
-                    st.rerun()
-                except Exception as e: st.error(f"Lỗi: {e}"); st.stop()
+            st.session_state.data = {'sales': df_m, 'waste': df_w, 'inv': df_i, 'target': d_target}
+            st.session_state.processed = True
+            st.rerun()
+        except Exception as e: st.error(f"Lỗi: {e}"); st.stop()
 
 # --- 5. DASHBOARD ---
 if 'data' in st.session_state and st.session_state.processed:
@@ -209,11 +226,12 @@ if 'data' in st.session_state and st.session_state.processed:
 
     if not (sel_months and sel_regions and sel_cats and sel_b): st.warning("Vui lòng chọn bộ lọc"); st.stop()
 
-    # --- FILTER DATA ---
+    # Filtered Data
     dm = df_m[df_m['MONTH'].isin(sel_months) & df_m['BRANCH_ID'].isin(sel_b) & df_m['CATEGORY'].isin(sel_cats)]
     dw = df_w[df_w['MONTH'].isin(sel_months) & df_w['BRANCH_ID'].isin(sel_b) & df_w['CATEGORY'].isin(sel_cats)]
     di = df_i[df_i['BRANCH_ID'].isin(sel_b) & df_i['CATEGORY'].isin(sel_cats)]
 
+    # Metrics
     total_rev = dm['REV'].sum()
     total_gp = dm['GP'].sum()
     total_waste = dw['VAL'].sum()
@@ -229,7 +247,6 @@ if 'data' in st.session_state and st.session_state.processed:
 
     tab1, tab2, tab3 = st.tabs(["📊 EXECUTIVE VIEW", "⚡ SỤT GIẢM & HÀNG NHẬP", "🔎 CHI TIẾT SỐ LIỆU"])
 
-    # --- TAB 1: CHARTS ---
     with tab1:
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("DOANH THU", f"{total_rev:,.0f}", f"{kpi_pct:.1f}% KPI")
@@ -247,10 +264,12 @@ if 'data' in st.session_state and st.session_state.processed:
                 curr = max(sel_months)
                 date_end = pd.to_datetime(curr + '-01')
                 date_list = [((date_end - pd.DateOffset(months=i)).strftime('%Y-%m')) for i in range(11, -1, -1)]
+                # Filter full data for charts to show trend
                 dm_all = df_m[df_m['BRANCH_ID'].isin(sel_b) & df_m['CATEGORY'].isin(sel_cats)]
                 dw_all = df_w[df_w['BRANCH_ID'].isin(sel_b) & df_w['CATEGORY'].isin(sel_cats)]
                 m_rev = dm_all.groupby('MONTH')['REV'].sum()
                 m_net = dm_all.groupby('MONTH')['GP'].sum() - dw_all.groupby('MONTH')['VAL'].sum()
+                
                 df_t = pd.DataFrame(index=date_list)
                 df_t['REV'] = m_rev
                 df_t['NET'] = m_net
@@ -258,6 +277,7 @@ if 'data' in st.session_state and st.session_state.processed:
                 df_t['PCT'] = (df_t['NET']/df_t['REV']*100).fillna(0)
                 df_t['M'] = pd.to_datetime(df_t.index + '-01').month.astype(str)
                 colors = [COLOR_REV if m in sel_months else '#E0E0E0' for m in df_t.index]
+                
                 fig1 = make_subplots(specs=[[{"secondary_y": True}]])
                 fig1.add_trace(go.Bar(x=df_t['M'], y=df_t['REV'], marker_color=colors, texttemplate='<b>%{y:.2s}</b>', textfont=dict(size=14)), secondary_y=False)
                 fig1.add_trace(go.Scatter(x=df_t['M'], y=df_t['PCT'], mode='lines+markers+text', line=dict(color='gray', width=1), 
@@ -322,82 +342,50 @@ if 'data' in st.session_state and st.session_state.processed:
             st.plotly_chart(fig5, use_container_width=True)
 
         with c4b:
-            st.markdown("##### 🍕 Revenue by Category")
-            cat_rev = dm.groupby('CATEGORY')['REV'].sum().reset_index()
-            fig_pie = go.Figure(go.Pie(labels=cat_rev['CATEGORY'], values=cat_rev['REV'], textinfo='label+percent', textfont=dict(size=14, color='black')))
-            fig_pie.update_layout(showlegend=False, margin=dict(l=0,r=0,t=0,b=0), font=dict(size=13))
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.markdown("##### 📉 Top 20 Sụt Giảm & Tồn Kho")
+            if sel_months:
+                curr = max(sel_months)
+                y, m = map(int, curr.split('-'))
+                prev_m = m - 1 if m > 1 else 12
+                prev_y = y if m > 1 else y - 1
+                prev = f"{prev_y}-{prev_m:02d}"
+                
+                # Scope filter for chart
+                df_scope = df_m[df_m['BRANCH_ID'].isin(sel_b) & df_m['CATEGORY'].isin(sel_cats)]
+                curr_s = df_scope[df_scope['MONTH'] == curr].groupby('PROD_ID')['REV'].sum()
+                prev_s = df_scope[df_scope['MONTH'] == prev].groupby('PROD_ID')['REV'].sum()
+                df_mom = pd.DataFrame({'CURR': curr_s, 'PREV': prev_s}).fillna(0)
+                df_mom['DIFF'] = df_mom['CURR'] - df_mom['PREV']
+                
+                decline_chart = df_mom[df_mom['DIFF'] < 0].sort_values('DIFF', ascending=True).head(20)
+                stk_val = di.groupby('PROD_ID')['STOCK_VAL'].sum()
+                decline_chart['NAME'] = [all_names.get(x, x) for x in decline_chart.index]
+                decline_chart['STOCK_VAL'] = decline_chart.index.map(stk_val).fillna(0)
+                decline_chart['DIFF_ABS'] = decline_chart['DIFF'].abs()
+                decline_chart = decline_chart.sort_values('DIFF', ascending=False)
 
-        # --- ROW 4: CHART SO SÁNH SỤT GIẢM & TỒN KHO ---
-        st.markdown("##### 📉 Top 20 Sụt Giảm Doanh Thu & Giá Trị Tồn Kho")
-        if sel_months:
-            curr = max(sel_months)
-            y, m = map(int, curr.split('-'))
-            prev_m = m - 1 if m > 1 else 12
-            prev_y = y if m > 1 else y - 1
-            prev = f"{prev_y}-{prev_m:02d}"
-            
-            # Tính sụt giảm dựa trên dữ liệu đã lọc (Chi nhánh/Ngành hàng)
-            curr_s = dm[dm['MONTH'] == curr].groupby('PROD_ID')['REV'].sum()
-            # Cần lấy dữ liệu tháng trước của cùng Branch/Cat
-            # Lọc lại df_m cho tháng trước với cùng điều kiện
-            dm_prev = df_m[df_m['MONTH'] == prev]
-            dm_prev = dm_prev[dm_prev['BRANCH_ID'].isin(sel_b) & dm_prev['CATEGORY'].isin(sel_cats)]
-            prev_s = dm_prev.groupby('PROD_ID')['REV'].sum()
-            
-            df_mom = pd.DataFrame({'CURR': curr_s, 'PREV': prev_s}).fillna(0)
-            df_mom['DIFF'] = df_mom['CURR'] - df_mom['PREV']
-            
-            # Top 20 Sụt giảm
-            decline_chart = df_mom[df_mom['DIFF'] < 0].sort_values('DIFF', ascending=True).head(20)
-            
-            # Map Tồn kho
-            stk_val = di.groupby('PROD_ID')['STOCK_VAL'].sum()
-            
-            decline_chart['NAME'] = [all_names.get(x, x) for x in decline_chart.index]
-            decline_chart['STOCK_VAL'] = decline_chart.index.map(stk_val).fillna(0)
-            decline_chart['DIFF_ABS'] = decline_chart['DIFF'].abs()
-            decline_chart = decline_chart.sort_values('DIFF', ascending=False)
+                fig6 = go.Figure()
+                fig6.add_trace(go.Bar(x=decline_chart['NAME'], y=decline_chart['DIFF_ABS'], name='Sụt Giảm', marker_color=COLOR_NEG, text=[format_compact(x) for x in decline_chart['DIFF_ABS']], textposition='auto'))
+                fig6.add_trace(go.Bar(x=decline_chart['NAME'], y=decline_chart['STOCK_VAL'], name='GT Tồn', marker_color=COLOR_DEAD, text=[format_compact(x) for x in decline_chart['STOCK_VAL']], textposition='auto'))
+                fig6.update_layout(barmode='group', height=400, showlegend=True, legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'), margin=dict(l=0, r=0, t=40, b=0), font=dict(size=13))
+                fig6.update_yaxes(showgrid=False, visible=False)
+                fig6.update_xaxes(tickangle=-45)
+                st.plotly_chart(fig6, use_container_width=True)
 
-            fig6 = go.Figure()
-            fig6.add_trace(go.Bar(
-                x=decline_chart['NAME'], y=decline_chart['DIFF_ABS'], 
-                name='Mức Sụt Giảm', marker_color=COLOR_NEG,
-                text=[format_compact(x) for x in decline_chart['DIFF_ABS']], textposition='auto', textfont=dict(size=14)
-            ))
-            fig6.add_trace(go.Bar(
-                x=decline_chart['NAME'], y=decline_chart['STOCK_VAL'], 
-                name='Giá Trị Tồn', marker_color=COLOR_DEAD,
-                text=[format_compact(x) for x in decline_chart['STOCK_VAL']], textposition='auto', textfont=dict(size=14)
-            ))
-            
-            fig6.update_layout(barmode='group', height=450, showlegend=True, 
-                               legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'),
-                               margin=dict(l=0, r=0, t=40, b=0), font=dict(size=13))
-            fig6.update_yaxes(showgrid=False, visible=False)
-            fig6.update_xaxes(tickangle=-45)
-            st.plotly_chart(fig6, use_container_width=True)
-        else: st.info("Chọn tháng để xem so sánh")
-
-    # --- TAB 2: TABLE ---
     with tab2:
         st.markdown("#### ⚡ BẢNG SỐ LIỆU: SỤT GIẢM & HÀNG NHẬP")
         if sel_months:
-            # Table Logic matches Chart 4 Logic
-            curr_s = dm[dm['MONTH'] == curr].groupby('PROD_ID')['REV'].sum()
-            dm_prev = df_m[df_m['MONTH'] == prev]
-            dm_prev = dm_prev[dm_prev['BRANCH_ID'].isin(sel_b) & dm_prev['CATEGORY'].isin(sel_cats)]
-            prev_s = dm_prev.groupby('PROD_ID')['REV'].sum()
-            
+            # Using same scope filter logic
+            df_scope = df_m[df_m['BRANCH_ID'].isin(sel_b) & df_m['CATEGORY'].isin(sel_cats)]
+            curr_s = df_scope[df_scope['MONTH'] == curr].groupby('PROD_ID')['REV'].sum()
+            prev_s = df_scope[df_scope['MONTH'] == prev].groupby('PROD_ID')['REV'].sum()
             df_mom = pd.DataFrame({'REV_CURR': curr_s, 'REV_PREV': prev_s}).fillna(0)
             df_mom['DIFF'] = df_mom['REV_CURR'] - df_mom['REV_PREV']
-            
             decline = df_mom[df_mom['DIFF'] < 0].sort_values('DIFF', ascending=True).head(50)
             stk_info = di.groupby('PROD_ID').agg({'STOCK_QTY':'sum', 'STOCK_VAL':'sum', 'IMPORT_QTY':'sum'}).reset_index().set_index('PROD_ID')
             decline = decline.join(stk_info, how='left').fillna(0)
             decline['NAME'] = [all_names.get(x, x) for x in decline.index]
-            
-            curr_q = dm[dm['MONTH'] == curr].groupby('PROD_ID')['QTY'].sum()
+            curr_q = df_scope[df_scope['MONTH'] == curr].groupby('PROD_ID')['QTY'].sum()
             decline['QTY_CURR'] = decline.index.map(curr_q).fillna(0)
             avg_qty = decline['QTY_CURR'] / (days if days > 0 else 1)
             decline['DAYS'] = np.where(avg_qty > 0, decline['STOCK_QTY'] / avg_qty, 999)
@@ -405,11 +393,8 @@ if 'data' in st.session_state and st.session_state.processed:
             show_cols = ['NAME', 'REV_CURR', 'REV_PREV', 'DIFF', 'STOCK_VAL', 'DAYS', 'IMPORT_QTY']
             renames = {'NAME':'Tên SP', 'REV_CURR':f'DT T{m}', 'REV_PREV':f'DT T{prev_m}', 'DIFF':'Sụt Giảm', 
                        'STOCK_VAL':'GT Tồn', 'DAYS':'Ngày Bán', 'IMPORT_QTY':'SL Nhập'}
-            
             st.dataframe(decline[show_cols].rename(columns=renames).style.format("{:,.0f}", subset=[f'DT T{m}', f'DT T{prev_m}', 'Sụt Giảm', 'GT Tồn', 'SL Nhập']).format("{:.1f}", subset=['Ngày Bán']).background_gradient(subset=['Sụt Giảm'], cmap='RdYlGn'), use_container_width=True, height=600)
-        else: st.info("Chọn tháng để so sánh")
 
-    # --- TAB 3: DETAILS ---
     with tab3:
         st.markdown("#### 🔎 DỮ LIỆU CHI TIẾT")
         agg_m = dm.groupby(['PROD_ID', 'NAME']).agg({'QTY':'sum', 'REV':'sum', 'GP':'sum'}).reset_index()
@@ -422,3 +407,31 @@ if 'data' in st.session_state and st.session_state.processed:
         disp = final[['PROD_ID', 'NAME', 'QTY', 'REV', 'NET', 'STOCK_QTY', 'STOCK_VAL', 'IMPORT_QTY', 'WASTE_VAL']]
         disp.columns = ['Mã', 'Tên', 'SL Bán', 'Doanh Thu', 'LN Ròng', 'SL Tồn', 'GT Tồn', 'SL Nhập', 'GT Hủy']
         st.dataframe(disp.style.format("{:,.0f}", subset=['SL Bán', 'Doanh Thu', 'LN Ròng', 'SL Tồn', 'GT Tồn', 'SL Nhập', 'GT Hủy']), use_container_width=True, height=600)
+
+    # --- CHATBOT (SIDEBAR) ---
+    if ai_available:
+        with st.sidebar:
+            st.markdown("---")
+            st.header("🤖 Trợ Lý AI")
+            
+            # Context for AI
+            context_text = f"""
+            Tháng {', '.join(sel_months)}. Tổng DT: {total_rev:,.0f}. LN Ròng: {total_net:,.0f}. Tồn kho: {total_stock:,.0f}.
+            Top 1 sụt giảm: {decline.iloc[0]['NAME'] if not decline.empty else 'N/A'} (Giảm {decline.iloc[0]['DIFF']:,.0f}).
+            Top 1 hủy: {top_w.iloc[0]['NAME'] if not top_w.empty else 'N/A'} (Trị giá {top_w.iloc[0]['VAL']:,.0f}).
+            """
+            
+            if "messages" not in st.session_state:
+                st.session_state.messages = [{"role": "assistant", "content": "Chào CEO! Ông cần tôi phân tích gì?"}]
+
+            for msg in st.session_state.messages:
+                st.chat_message(msg["role"]).write(msg["content"])
+
+            if prompt := st.chat_input("Hỏi AI..."):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                st.chat_message("user").write(prompt)
+                try:
+                    response = model.generate_content(f"Dựa vào data: {context_text}. Trả lời ngắn gọn: {prompt}")
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    st.chat_message("assistant").write(response.text)
+                except: st.error("Lỗi AI")
